@@ -20,7 +20,7 @@ class TestUart : public Lwrs::IUart
         TestUart(std::queue<uint8_t> &send_queue, std::mutex &send_mut,
             std::queue<uint8_t> &recv_queue, std::mutex &recv_mut) :
                 q_send(send_queue), q_recv(recv_queue), m_send(send_mut), m_recv(recv_mut) {}
-        void Send(uint8_t b)
+        void write(uint8_t b)
         {
             m_send.lock();
             // occasionally introduce errors
@@ -36,16 +36,15 @@ class TestUart : public Lwrs::IUart
             m_send.unlock();
         }
 
-        bool Recv(uint8_t *b)
+        int read()
         {
-            bool ret = false;
+            int ret = -1;
 
             m_recv.lock();
             if(!q_recv.empty())
             {
-                *b = q_recv.front();
+                ret = static_cast<int>(q_recv.front());
                 q_recv.pop();
-                ret = true;
             }
             m_recv.unlock();
 

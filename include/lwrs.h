@@ -20,8 +20,8 @@ namespace Lwrs
     class IUart
     {
         public:
-            virtual void Send(uint8_t b) = 0;
-            virtual bool Recv(uint8_t *b) = 0;
+            virtual void write(uint8_t b) = 0;
+            virtual int read() = 0;
     };
 
     template <int packet_buf_size = 1024> class Lwrs
@@ -42,16 +42,16 @@ namespace Lwrs
 
             void send(uint32_t v)
             {
-                s.Send(static_cast<uint8_t>(v & 0xff));
-                s.Send(static_cast<uint8_t>((v >> 8) & 0xff));
-                s.Send(static_cast<uint8_t>((v >> 16) & 0xff));
-                s.Send(static_cast<uint8_t>((v >> 24) & 0xff));
+                s.write(static_cast<uint8_t>(v & 0xff));
+                s.write(static_cast<uint8_t>((v >> 8) & 0xff));
+                s.write(static_cast<uint8_t>((v >> 16) & 0xff));
+                s.write(static_cast<uint8_t>((v >> 24) & 0xff));
             }
 
             void send(uint16_t v)
             {
-                s.Send(static_cast<uint8_t>(v & 0xff));
-                s.Send(static_cast<uint8_t>((v >> 8) & 0xff));
+                s.write(static_cast<uint8_t>(v & 0xff));
+                s.write(static_cast<uint8_t>((v >> 8) & 0xff));
             }
 
             uint32_t rbuf32(const uint8_t *buf, size_t idx)
@@ -278,9 +278,11 @@ namespace Lwrs
                     }
                 }
 
-                uint8_t b;
-                while(s.Recv(&b))
+                int ib;
+                while((ib = s.read()) >= 0)
                 {
+					auto b = static_cast<uint8_t>(ib);
+
                     // byte received - process according to current state
                     switch(ps)
                     {
@@ -609,11 +611,11 @@ namespace Lwrs
                             case 0x57:
                             case 0x78:
                             case 0x79:
-                                s.Send(0x11);
-                                s.Send(buf[i]);
+                                s.write(0x11);
+                                s.write(buf[i]);
                                 break;
                             default:
-                                s.Send(buf[i]);
+                                s.write(buf[i]);
                                 break;
                         }
                     }
