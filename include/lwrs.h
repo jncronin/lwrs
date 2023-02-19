@@ -80,7 +80,7 @@ namespace Lwrs
                 if(pkt_len > bufsize)
                     return false;
                 
-                auto footer_start = pkt_len - 12;
+                size_t footer_start = pkt_len - 12;
                 
                 if(rbuf32(buf, footer_start + 8) != footer_magic)
                     valid = false;
@@ -507,7 +507,7 @@ namespace Lwrs
             }
 
         public:
-            Lwrs(IUart &uart) : s(uart)
+            Lwrs(IUart &_uart) : s(_uart)
             {
                 next_pid = static_cast<uint32_t>(rand());
 
