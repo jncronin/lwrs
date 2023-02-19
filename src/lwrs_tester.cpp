@@ -1,11 +1,13 @@
 #include "lwrs.h"
 #include <queue>
 #include <cstdlib>
+#include <climits>
 #include <iostream>
 #include <mutex>
 #include <string>
 #include <chrono>
 #include <thread>
+#include <mutex>
 
 std::queue<uint8_t> AtoB, BtoA;
 std::mutex m_AtoB, m_BtoA, m_cout;

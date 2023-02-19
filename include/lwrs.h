@@ -2,6 +2,7 @@
 #define LWRS_H
 
 #include <cstdint>
+#include <cstdlib>
 
 #if LWRS_DEBUG
 #include <iostream>

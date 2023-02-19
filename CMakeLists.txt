@@ -10,13 +10,16 @@ target_sources(liblwrs
     PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/src/crc32.cpp")
 
-add_executable(LwrsTest)
-target_include_directories(LwrsTest
-    PRIVATE
-        "${CMAKE_CURRENT_SOURCE_DIR}/include")
-target_sources(LwrsTest
-    PRIVATE
-        "${CMAKE_CURRENT_SOURCE_DIR}/src/lwrs_tester.cpp")
-target_link_libraries(LwrsTest
-    PRIVATE
-        liblwrs)
+if(NOT CMAKE_SYSTEM_NAME STREQUAL "Generic")
+    add_executable(LwrsTest)
+    set(CMAKE_CXX_STANDARD 17)
+    target_include_directories(LwrsTest
+        PRIVATE
+            "${CMAKE_CURRENT_SOURCE_DIR}/include")
+    target_sources(LwrsTest
+        PRIVATE
+            "${CMAKE_CURRENT_SOURCE_DIR}/src/lwrs_tester.cpp")
+    target_link_libraries(LwrsTest
+        PRIVATE
+            liblwrs)
+endif()
