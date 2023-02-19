@@ -2,8 +2,11 @@
 #define LWRS_H
 
 #include <cstdint>
+
+#if LWRS_DEBUG
 #include <iostream>
 #include <thread>
+#endif
 
 extern "C" unsigned long millis();
 
@@ -268,7 +271,9 @@ namespace Lwrs
                             send_control_message(ackack_buf[i].pid,
                                 ctrl_message::ACK);
                             ackack_buf[i].start_time = millis();
+#if LWRS_DEBUG
 							std::cout << std::this_thread::get_id() << " resend ACK " << ackack_buf[i].pid << std::endl;
+#endif
                         }
                     }
                 }
@@ -276,7 +281,6 @@ namespace Lwrs
                 uint8_t b;
                 while(s.Recv(&b))
                 {
-					//std::cout << std::this_thread::get_id() << ": " << static_cast<int>(ps) << std::endl;
                     // byte received - process according to current state
                     switch(ps)
                     {
@@ -288,7 +292,9 @@ namespace Lwrs
                                 recv_header_idx = 0;
                                 headerbuf[recv_header_idx++] = b;
                                 ps = poll_state::RecvHeader;
+#if LWRS_DEBUG
 								std::cout << std::this_thread::get_id() << ": RecvHeader" << std::endl;
+#endif
                             }
                             // else do nothing
                         }
@@ -311,7 +317,9 @@ namespace Lwrs
                                     {
                                         // yes - keep parsing in headerbuf
                                         ps = poll_state::RecvControlPacket;
+#if LWRS_DEBUG
 										std::cout << std::this_thread::get_id() << ": RecvControlPacket" << std::endl;
+#endif
 									}
                                     else
                                     {
@@ -323,7 +331,9 @@ namespace Lwrs
                                         {
                                             // no
                                             ps = poll_state::DiscardDataPacket;
+#if LWRS_DEBUG
 											std::cout << std::this_thread::get_id() << ": DiscardDataPacket" << std::endl;
+#endif
 										}
                                         else
                                         {
@@ -334,7 +344,9 @@ namespace Lwrs
                                             }
                                             recv_packet_idx = recv_header_idx;
                                             ps = poll_state::RecvDataPacket;
+#if LWRS_DEBUG
 											std::cout << std::this_thread::get_id() << ": RecvDataPacket" << std::endl;
+#endif
 										}
                                     }
                                 }
@@ -342,7 +354,9 @@ namespace Lwrs
 								{
 									// magic invalid - return to idle
 									ps = poll_state::Idle;
+#if LWRS_DEBUG
 									std::cout << std::this_thread::get_id() << ": Idle" << std::endl;
+#endif
 								}
                             }
                         }
@@ -365,18 +379,21 @@ namespace Lwrs
 
                                 // end of packet - return to idle state
                                 ps = poll_state::Idle;
+#if LWRS_DEBUG
 								std::cout << std::this_thread::get_id() << ": Idle" << std::endl;
 
 								if (check_pid)
 									std::cout << std::this_thread::get_id() << " expecting ctrl_msg for " << pid <<  " got " << rpid << std::endl;
 								else
 									std::cout << std::this_thread::get_id() << " unexpected ctrl_msg " << rpid << std::endl;
-
+#endif
 
                                 // is it valid and an ACKACK?
                                 if(valid && rbuf16(headerbuf, 8) == static_cast<int>(ctrl_message::ACKACK))
                                 {
+#if LWRS_DEBUG
 									std::cout << std::this_thread::get_id() << " received ACKACK " << rpid << std::endl;
+#endif
 
                                     dequeue_ackack(rpid);
                                 }
@@ -395,7 +412,9 @@ namespace Lwrs
                                     if(rbuf16(headerbuf, 8) == static_cast<int>(ctrl_message::ACK))
                                     {
                                         // ACK
+#if LWRS_DEBUG
 										std::cout << std::this_thread::get_id() << " received ACK " << rpid << " sending ackack " << std::endl;
+#endif
 										send_control_message(rpid, ctrl_message::ACKACK);
                                         dequeue_ack(rpid);
                                         return 1;
@@ -403,7 +422,9 @@ namespace Lwrs
                                     else if(rbuf16(headerbuf, 8) == static_cast<int>(ctrl_message::NACK))
                                     {
                                         // NACK
+#if LWRS_DEBUG
 										std::cout << std::this_thread::get_id() << " received NACK " << rpid << std::endl;
+#endif
                                         dequeue_ack(rpid);
 										return -1;
                                     }
@@ -430,21 +451,27 @@ namespace Lwrs
                                     // data now ready
                                     data_packet_ready = true;
                                     ps = poll_state::Idle;
+#if LWRS_DEBUG
 									std::cout << std::this_thread::get_id() << ": Idle" << std::endl;
+#endif
 								}
                                 else
                                 {
                                     // send nack
                                     send_control_message(rpid, ctrl_message::NACK);
                                     ps = poll_state::Idle;
+#if LWRS_DEBUG
 									std::cout << std::this_thread::get_id() << ": Idle" << std::endl;
+#endif
 								}
                             }
                             else if(recv_packet_idx >= packet_buf_size)
                             {
                                 // cannot keep receiving data - will discard
                                 ps = poll_state::DiscardDataPacket;
+#if LWRS_DEBUG
 								std::cout << std::this_thread::get_id() << ": DiscardDataPacket" << std::endl;
+#endif
 								recv_pid = rbuf32(recvbuf, 4);
                             }
                         }
@@ -462,7 +489,9 @@ namespace Lwrs
 								std::cout << std::this_thread::get_id() << " sending NACK (discard packet) " << recv_pid << std::endl;
 
                                 ps = poll_state::Idle;
+#if LWRS_DEBUG
 								std::cout << std::this_thread::get_id() << ": Idle" << std::endl;
+#endif
 							}
                         }
                         break;
