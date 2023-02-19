@@ -486,7 +486,9 @@ namespace Lwrs
                             {
                                 // NACK and return to Idle
                                 send_control_message(recv_pid, ctrl_message::NACK);
+#if LWRS_DEBUG
 								std::cout << std::this_thread::get_id() << " sending NACK (discard packet) " << recv_pid << std::endl;
+#endif
 
                                 ps = poll_state::Idle;
 #if LWRS_DEBUG
