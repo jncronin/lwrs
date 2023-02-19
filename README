@@ -33,8 +33,6 @@ Any bytes that are:
 are encoded as 0x11 followed by that byte
 Other bytes are transmitted as-is
 
-packets are padded to a multiple of 4 bytes
-
 Footer:
 Packet ID (4 bytes)
 CRC32C of header, encoded data and footer with CRC field set to 0 (4 bytes)
@@ -49,8 +47,8 @@ B acknowledges with ACK
 If B does not acknowledge within a certain time period, or if B NACKs then A
 resends the packet.
 
-ACK is header + footer without data.  Packet ID is set to zero
-NACK is header + footer without data.  Packet ID is set to 0xffff.
+ACK is header + footer without data.  Protocol ID is set to zero
+NACK is header + footer without data.  Protocol ID is set to 0xffff.
 
 
 The default implementation does not queue packets for sending and the send()

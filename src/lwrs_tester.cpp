@@ -10,60 +10,60 @@
 std::queue<uint8_t> AtoB, BtoA;
 std::mutex m_AtoB, m_BtoA, m_cout;
 
-class TestSender : public Lwrs::ISender
+class TestUart : public Lwrs::IUart
 {
     protected:
-        std::queue<uint8_t> &q;
-        std::mutex &m;
+        std::queue<uint8_t> &q_send, &q_recv;
+        std::mutex &m_send, &m_recv;
 
     public:
-        TestSender(std::queue<uint8_t> &queue, std::mutex &mut) : q(queue), m(mut) {}
+        TestUart(std::queue<uint8_t> &send_queue, std::mutex &send_mut,
+            std::queue<uint8_t> &recv_queue, std::mutex &recv_mut) :
+                q_send(send_queue), q_recv(recv_queue), m_send(send_mut), m_recv(recv_mut) {}
         void Send(uint8_t b)
         {
-            m.lock();
+            m_send.lock();
             // occasionally introduce errors
-            if((rand() % 100) == 1)
+            if((rand() % 1000) == 1)
             {
                 m_cout.lock();
-                std::cout << "Adding random error" << std::endl;
+                std::cout << "***** Adding random error" << std::endl;
                 m_cout.unlock();
-                q.push(~b);
+                q_send.push(~b);
             }
             else
-                q.push(b);
-            m.unlock();
+                q_send.push(b);
+            m_send.unlock();
+        }
+
+        bool Recv(uint8_t *b)
+        {
+            bool ret = false;
+
+            m_recv.lock();
+            if(!q_recv.empty())
+            {
+                *b = q_recv.front();
+                q_recv.pop();
+                ret = true;
+            }
+            m_recv.unlock();
+
+            return ret;
         }
 };
 
-TestSender ASender(AtoB, m_AtoB);
-TestSender BSender(BtoA, m_BtoA);
+TestUart ASender(AtoB, m_AtoB, BtoA, m_BtoA);
+TestUart BSender(BtoA, m_BtoA, AtoB, m_AtoB);
 
 Lwrs::Lwrs<> A(ASender);
 Lwrs::Lwrs<> B(BSender);
 
-void recv_thread(Lwrs::Lwrs<> &lwrs, std::queue<uint8_t> &recv_queue,
-    std::mutex &m_recv_queue)
+void send_thread(Lwrs::Lwrs<> &lwrs, std::string node_name, bool send)
 {
     while(true)
     {
-        m_recv_queue.lock();
-        while(!recv_queue.empty())
-        {
-            auto b = recv_queue.front();
-            recv_queue.pop();
-            lwrs.Recv(b);
-        }
-        m_recv_queue.unlock();
-
-        std::this_thread::sleep_for(std::chrono::milliseconds(1));
-    }
-}
-
-void send_thread(Lwrs::Lwrs<> &lwrs, std::string node_name)
-{
-    while(true)
-    {
-        if((rand() % 10) == 1)
+        if(send && ((rand() % 10) == 1))
         {
             // send some data
             uint8_t send_data[256];
@@ -82,10 +82,10 @@ void send_thread(Lwrs::Lwrs<> &lwrs, std::string node_name)
 
         uint8_t recv_data[512];
         size_t recv_len = 512;
-        int recv_prot;
+        uint16_t recv_prot;
 
         auto poll_ret = lwrs.Poll(recv_data, &recv_len, &recv_prot);
-        if(poll_ret)
+        if(poll_ret > 0)
         {
             m_cout.lock();
             std::cout << node_name << " received " << recv_len << " bytes" <<
@@ -100,13 +100,16 @@ void send_thread(Lwrs::Lwrs<> &lwrs, std::string node_name)
 int main()
 {
     // make send and receive threads for A and B
-    std::thread sA(send_thread, std::ref(A), "A");
-    std::thread sB(send_thread, std::ref(B), "B");
-    std::thread rA(recv_thread, std::ref(A), std::ref(BtoA), std::ref(m_BtoA));
-    std::thread rB(recv_thread, std::ref(B), std::ref(AtoB), std::ref(m_AtoB));
+    std::thread sA(send_thread, std::ref(A), "A", true);
+    std::thread sB(send_thread, std::ref(B), "B", true);
 
     sA.join();
     sB.join();
-    rA.join();
-    rB.join();
+}
+
+extern "C" unsigned long millis()
+{
+    auto now = std::chrono::steady_clock::now();
+    auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch());
+    return ms.count() % ULONG_MAX;
 }
