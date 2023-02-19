@@ -43,12 +43,17 @@ Sequence of data transmission is:
 
 A sends packet to B
 B acknowledges with ACK
+A acknowledges with ACKACK
 
 If B does not acknowledge within a certain time period, or if B NACKs then A
 resends the packet.
 
+If A does not ACKACK within a certain time period, B re-ACKs
+A does not ACKACK a NACK, merely resends packet with new packet id
+
 ACK is header + footer without data.  Protocol ID is set to zero
 NACK is header + footer without data.  Protocol ID is set to 0xffff.
+ACKACK is header + footer without data.  Protocol ID is set to 0x8080
 
 
 The default implementation does not queue packets for sending and the send()

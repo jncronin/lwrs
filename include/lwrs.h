@@ -32,6 +32,7 @@ namespace Lwrs
             const static uint32_t header_magic = 0x12345678;
             const static uint32_t footer_magic = 0x13355779;
             const static unsigned long ack_timeout_ms = 100;
+            const static unsigned long ackack_timeout_ms = 10;
             const static size_t send_retries = 5;
 
             volatile bool data_packet_ready = false;
@@ -103,17 +104,20 @@ namespace Lwrs
                 return valid;
             }
 
-            /* Send a control message (ACK/NACK) */
-            void send_control_message(uint32_t pid, bool ack)
+            /* Send a control message (ACK/NACK/ACKACK) */
+            enum ctrl_message {
+                ACK = 0,
+                ACKACK = 0x8080,
+                NACK = 0xffff
+            };
+            void send_control_message(uint32_t pid, ctrl_message ack)
             {
                 // calculate crc for control message
                 uint32_t c = 0xffffffff;
                 c = crc(c, header_magic);
                 c = crc(c, pid);
-                if(ack)
-                    c = crc(c, static_cast<uint16_t>(0));
-                else
-                    c = crc(c, static_cast<uint16_t>(0xffff));
+                auto ack_u16 = static_cast<uint16_t>(ack);
+                c = crc(c, ack_u16);
                 c = crc(c, static_cast<uint16_t>(12+12));
                 c = crc(c, pid);
                 c = crc(c, static_cast<uint32_t>(0));
@@ -123,14 +127,101 @@ namespace Lwrs
                 // send message
                 send(header_magic);
                 send(pid);
-                if(ack)
-                    send(static_cast<uint16_t>(0));
-                else
-                    send(static_cast<uint16_t>(0xffff));
+                send(ack_u16);
                 send(static_cast<uint16_t>(12+12));
                 send(pid);
                 send(c);
                 send(footer_magic);
+            }
+
+            /* Keep a queue of acks that are awaiting an ackack */
+            struct awaited_ackack
+            {
+                uint32_t pid;
+                unsigned long start_time;
+                bool valid = false;
+            };
+
+            static const size_t ackack_buf_len = 16;
+            awaited_ackack ackack_buf[ackack_buf_len];
+
+            void enqueue_ackack(uint32_t pid)
+            {
+                // find a valid entry
+                for(size_t i = 0; i < ackack_buf_len; i++)
+                {
+                    if(ackack_buf[i].valid == false)
+                    {
+                        ackack_buf[i].valid = true;
+                        ackack_buf[i].pid = pid;
+                        ackack_buf[i].start_time = millis();
+                        return;
+                    }
+                }
+            }
+
+            void dequeue_ackack(uint32_t pid)
+            {
+                for(size_t i = 0; i < ackack_buf_len; i++)
+                {
+                    if(ackack_buf[i].pid == pid)
+                    {
+                        ackack_buf[i].valid = false;
+                    }
+                }
+            }
+
+            /* We also keep a list of the ACKs we are expecting.  This is 
+                actually only used to keep track of those we aren't expecting
+                because then we can safely ACKACK surious ACKs.
+                
+                We get spurious ACKs if:
+                    A sends packet to B
+                    B ACKs, so A Send() continues
+                    the ACK is corrupted
+                    No ACKACK is sent, so B ACKs continuously
+                    Because A is no longer waiting for this ACK, it
+                        does not ACKACK */
+            struct awaited_ack
+            {
+                uint32_t pid;
+                bool valid = false;
+            };
+            static const size_t ack_buf_len = ackack_buf_len;
+            awaited_ack ack_buf[ack_buf_len];
+
+            void enqueue_ack(uint32_t pid)
+            {
+                for(size_t i = 0; i < ack_buf_len; i++)
+                {
+                    if(ack_buf[i].valid == false)
+                    {
+                        ack_buf[i].valid = true;
+                        ack_buf[i].pid = pid;
+                        return;
+                    }
+                }
+            }
+
+            void dequeue_ack(uint32_t pid)
+            {
+                for(size_t i = 0; i < ack_buf_len; i++)
+                {
+                    if(ack_buf[i].pid == pid)
+                    {
+                        ack_buf[i].valid = false;
+                    }
+                }
+            }
+
+            bool ack_awaited(uint32_t pid)
+            {
+                for(size_t i = 0; i < ack_buf_len; i++)
+                {
+                    if(ack_buf[i].pid == pid && ack_buf[i].valid == true)
+                        return true;
+                }
+                return false;
             }
 
             /* Keep parsing received bytes, looking for a control sequence
@@ -166,6 +257,22 @@ namespace Lwrs
 
             int internal_poll(uint32_t pid = 0, bool check_pid = false)
             {
+                // check for ackack timeouts
+                for(size_t i = 0; i < ackack_buf_len; i++)
+                {
+                    if(ackack_buf[i].valid)
+                    {
+                        if(millis() > (ackack_buf[i].start_time + ackack_timeout_ms))
+                        {
+                            // resend
+                            send_control_message(ackack_buf[i].pid,
+                                ctrl_message::ACK);
+                            ackack_buf[i].start_time = millis();
+							std::cout << std::this_thread::get_id() << " resend ACK " << ackack_buf[i].pid << std::endl;
+                        }
+                    }
+                }
+
                 uint8_t b;
                 while(s.Recv(&b))
                 {
@@ -260,18 +367,45 @@ namespace Lwrs
                                 ps = poll_state::Idle;
 								std::cout << std::this_thread::get_id() << ": Idle" << std::endl;
 
+								if (check_pid)
+									std::cout << std::this_thread::get_id() << " expecting ctrl_msg for " << pid <<  " got " << rpid << std::endl;
+								else
+									std::cout << std::this_thread::get_id() << " unexpected ctrl_msg " << rpid << std::endl;
+
+
+                                // is it valid and an ACKACK?
+                                if(valid && rbuf16(headerbuf, 8) == static_cast<int>(ctrl_message::ACKACK))
+                                {
+									std::cout << std::this_thread::get_id() << " received ACKACK " << rpid << std::endl;
+
+                                    dequeue_ackack(rpid);
+                                }
+
+                                if(valid && !(check_pid && pid == rpid) &&
+                                    !ack_awaited(rpid) &&
+                                    rbuf16(headerbuf, 8) == static_cast<int>(ctrl_message::ACK))
+                                {
+                                    // this is a spurious ACK - ACKACK it
+                                    send_control_message(rpid, ctrl_message::ACKACK);                                    
+                                }
+
                                 // is it valid and are we expecting it?
                                 if(valid && check_pid && pid == rpid)
                                 {
-                                    if(rbuf16(headerbuf, 8) == 0)
+                                    if(rbuf16(headerbuf, 8) == static_cast<int>(ctrl_message::ACK))
                                     {
                                         // ACK
+										std::cout << std::this_thread::get_id() << " received ACK " << rpid << " sending ackack " << std::endl;
+										send_control_message(rpid, ctrl_message::ACKACK);
+                                        dequeue_ack(rpid);
                                         return 1;
                                     }
-                                    else if(rbuf16(headerbuf, 8) == 0xffff)
+                                    else if(rbuf16(headerbuf, 8) == static_cast<int>(ctrl_message::NACK))
                                     {
                                         // NACK
-                                        return -1;
+										std::cout << std::this_thread::get_id() << " received NACK " << rpid << std::endl;
+                                        dequeue_ack(rpid);
+										return -1;
                                     }
                                 }
 							}
@@ -290,7 +424,8 @@ namespace Lwrs
                                 if(is_recv_valid(recvbuf, packet_buf_size))
                                 {
                                     // send ack
-                                    send_control_message(rpid, true);
+                                    send_control_message(rpid, ctrl_message::ACK);
+                                    enqueue_ackack(rpid);
 
                                     // data now ready
                                     data_packet_ready = true;
@@ -300,7 +435,7 @@ namespace Lwrs
                                 else
                                 {
                                     // send nack
-                                    send_control_message(rpid, false);
+                                    send_control_message(rpid, ctrl_message::NACK);
                                     ps = poll_state::Idle;
 									std::cout << std::this_thread::get_id() << ": Idle" << std::endl;
 								}
@@ -323,7 +458,9 @@ namespace Lwrs
                             if(recv_header_idx == recv_packet_size || b == 0x12)	// start token exits
                             {
                                 // NACK and return to Idle
-                                send_control_message(recv_pid, false);
+                                send_control_message(recv_pid, ctrl_message::NACK);
+								std::cout << std::this_thread::get_id() << " sending NACK (discard packet) " << recv_pid << std::endl;
+
                                 ps = poll_state::Idle;
 								std::cout << std::this_thread::get_id() << ": Idle" << std::endl;
 							}
@@ -339,6 +476,16 @@ namespace Lwrs
             Lwrs(IUart &uart) : s(uart)
             {
                 next_pid = static_cast<uint32_t>(rand());
+
+                for(size_t i = 0; i < ackack_buf_len; i++)
+                {
+                    ackack_buf[i].valid = false;
+                }
+
+                for(size_t i = 0; i < ack_buf_len; i++)
+                {
+                    ack_buf[i].valid = false;
+                }
             }
 
             int Send(const uint8_t *buf, size_t buflen, uint16_t prot_id)
@@ -445,6 +592,7 @@ namespace Lwrs
                     send(footer_magic);
 
                     // now we need to keep polling until we receive an ACK for this
+                    enqueue_ack(pid);
                     auto cur_t = millis();
                     while(millis() < (cur_t + ack_timeout_ms))
                     {
@@ -463,6 +611,7 @@ namespace Lwrs
                         }
                         // else - still waiting
                     }
+					dequeue_ack(pid);
                 }
                 // we have reached the maximum number of retries
                 return -1;
