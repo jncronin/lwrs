@@ -1,0 +1,57 @@
+Lightweight reliable serial (lwrs)
+
+lwrs is designed for a specific use case, namely reliable (i.e. detecting and
+recovering from errors) transmission of small data items over a serial link
+(for example UART).  The only requirements are full-duplex communication.  In
+theory SPI could be supported however the master would be required to
+continuously poll the slave in order to ensure the slave is able to transmit
+the required control sequences.
+
+lwrs is designed to be lightweight - more so than the obvious alternative (lwip
+with PPP).
+
+
+The protocol is as follows:
+
+Data is transmitted in packets.  Each packet comprises a header, the data and a
+footer.
+
+All data fields longer than 1 byte are transmitted in LSB order.
+
+Header:
+
+Start of packet (4 bytes): 0x12345678
+Packet ID (4 bytes)
+Protocol ID (2 bytes)   (equivalent to port number in TCP)
+Packet size (2 bytes)   (size of header, encoded data and footer)
+
+Data:
+The data is transmitted in an encoded format:
+
+Any bytes that are:
+    0x11, 0x12, 0x13, 0x34, 0x35, 0x56, 0x57, 0x78, 0x79
+are encoded as 0x11 followed by that byte
+Other bytes are transmitted as-is
+
+packets are padded to a multiple of 4 bytes
+
+Footer:
+Packet ID (4 bytes)
+CRC32C of header, encoded data and footer with CRC field set to 0 (4 bytes)
+End of packet (4 bytes): 0x13355779
+
+
+Sequence of data transmission is:
+
+A sends packet to B
+B acknowledges with ACK
+
+If B does not acknowledge within a certain time period, or if B NACKs then A
+resends the packet.
+
+ACK is header + footer without data.  Packet ID is set to zero
+NACK is header + footer without data.  Packet ID is set to 0xffff.
+
+
+The default implementation does not queue packets for sending and the send()
+function blocks until completion or error condition.
