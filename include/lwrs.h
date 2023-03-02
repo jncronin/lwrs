@@ -3,6 +3,7 @@
 
 #include <cstdint>
 #include <cstdlib>
+#include <type_traits>
 
 #if LWRS_DEBUG
 #include <iostream>
@@ -703,6 +704,13 @@ namespace Lwrs
 
                 // no data ready
                 return 0;
+            }
+
+            template <typename T> int Send(const T& v, int prot_id = 0)
+            {
+                static_assert(std::is_pod<T>::value, "template parameter must be pod");
+
+                return Send(reinterpret_cast<const uint8_t *>(&v), sizeof(T), prot_id);
             }
     };
 }
